@@ -1,0 +1,184 @@
+---
+title: "615 Assignment Strawberries 1"
+author: "Haoran Cui"
+date: "2024-10-02"
+output: pdf_document
+---
+#Preparing data for analysis —— Strawberries
+
+```{R}
+library(knitr)
+library(kableExtra)
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+
+```
+
+```{R}
+# Load the data from a CSV file and view the first few rows
+strawberry <- read_csv("strawberries25_v3.csv", col_names = TRUE)
+head(strawberry)
+
+```
+
+```{R}
+# Replace any occurrences of "(D)" in Value and CV% columns with NA (missing value)
+strawberry <- strawberry %>%
+  mutate(
+    Value = ifelse(Value == "(D)", NA, Value),
+    `CV (%)` = ifelse(`CV (%)` == "(D)", NA, `CV (%)`)
+  )
+head(strawberry)
+
+```
+
+```{R}
+# Rearrange 'Domain' column into three new columns: chemical category, name, and number
+strawberry <- strawberry %>%
+  mutate(
+    Category = case_when(
+      Domain == "Total" ~ NA_character_,  # If Domain is "Total", mark as NA
+      str_detect(Domain, "CHEMICAL") ~ str_trim(str_remove(Domain, "CHEMICAL, ")),  # Remove "CHEMICAL, " from Domain
+      TRUE ~ Domain
+    )
+  )
+unique(strawberry$Category)
+head(strawberry)
+
+```
+
+```{R}
+# Extract "Name" and "Number" from the 'Domain Category' column
+strawberry <- strawberry %>%
+  mutate(
+    Name = case_when(
+      Category == "TOTAL" ~ NA_character_,  # If Category is "TOTAL", mark as NA
+      str_detect(`Domain Category`, fixed(Category)) & str_detect(`Domain Category`, "\\(.*=.*\\)") ~ 
+        str_extract(`Domain Category`, "(?<=\\().*?(?=\\s?=)"),  # Extract Name from Domain Category
+      str_detect(`Domain Category`, fixed(Category)) & str_detect(`Domain Category`, "\\(.*\\)") ~ 
+        str_extract(`Domain Category`, "(?<=\\().*?(?=\\))"),  # Another pattern for extraction
+      TRUE ~ NA_character_
+    ),
+    Number = case_when(
+      Category == "TOTAL" ~ NA_real_,  # If Category is "TOTAL", mark as NA
+      str_detect(`Domain Category`, fixed(Category)) & str_detect(`Domain Category`, "\\(.*=.*\\)") ~ 
+        as.numeric(str_extract(`Domain Category`, "(?<=\\=\\s?).*?(?=\\))")),  # Extract Number from Domain Category
+      str_detect(`Domain Category`, fixed(Category)) & str_detect(`Domain Category`, "\\(.*\\)") ~ 
+        NA_real_,  # If no number, mark as NA
+      TRUE ~ NA_real_
+    )
+  )
+
+```
+
+```{R}
+strawberry <- strawberry %>%
+  mutate(Category = case_when(
+    `Domain Category` == "NOT SPECIFIED" ~ NA_character_,  # If Domain Category is "NOT SPECIFIED", mark as NA
+    TRUE ~ Category  # Otherwise, retain the existing Category
+  ))
+head(strawberry)
+
+```
+
+```{R}
+# Clean and extract numerical intervals for planted area, creating Min and Max columns
+strawberry <- strawberry %>%
+  mutate(
+    Min = case_when(
+      str_detect(Name, "100 OR MORE ACRES") ~ 100,  # If the text says "100 OR MORE ACRES", Min is 100
+      str_detect(Name, "TO") ~ as.numeric(str_extract(Name, "^[0-9.]+")),  # Extract Min value from intervals like "X TO Y"
+      TRUE ~ NA_real_
+    ),
+    Max = case_when(
+      str_detect(Name, "100 OR MORE ACRES") ~ "MORE",  # For "100 OR MORE ACRES", Max is "MORE"
+      str_detect(Name, "TO") ~ str_extract(Name, "(?<=TO )^[0-9.]+"),  # Extract Max value from intervals
+      TRUE ~ NA_character_
+    )
+  )
+
+# View the cleaned data
+head(strawberry)
+
+```
+
+```{R}
+# Extract 'Unit' from the 'Data Item' column (substring after "MEASURED")
+strawberry <- strawberry %>%
+  mutate(Unit = str_extract(strawberry$`Data Item`, "(?<=MEASURED ).*"))
+
+# Extract 'Type' by identifying either "BEARING" or "ORGANIC" in the 'Data Item' column
+strawberry <- strawberry %>%
+  mutate(Type = str_extract(strawberry$`Data Item`, "BEARING|ORGANIC"))
+
+# Extract 'Operation' by removing 'MEASURED', 'BEARING', and 'ORGANIC'
+strawberry <- strawberry %>%
+  mutate(Operation = str_replace_all(strawberry$`Data Item`, "MEASURED.*|BEARING|ORGANIC", "") %>%
+           str_trim())
+
+# Further clean 'Operation' by removing additional terms ('STRAWBERRIES', commas, hyphens)
+strawberry <- strawberry %>%
+  mutate(Operation = str_replace_all(strawberry$`Data Item`, "MEASURED.*|BEARING|ORGANIC|STRAWBERRIES(, | - )", "") %>%
+           str_replace_all("[-,]", "") %>%
+           str_trim())
+
+# View the resulting data
+head(strawberry)
+
+```
+
+```{R}
+# Export the cleaned data to a CSV file
+write.csv(strawberry, "cleaned_strawberries.csv", row.names = FALSE)
+
+```
+
+```{R}
+# Check the structure of the cleaned dataset
+str(strawberry)
+
+```
+
+```{R}
+# Convert 'Value' to numeric, removing non-numeric characters
+strawberry$Value <- as.numeric(gsub("[^0-9.]", "", strawberry$Value))
+
+# Convert 'CV (%)' to numeric, removing non-numeric characters (including %, parentheses)
+strawberry$`CV (%)` <- as.numeric(gsub("[^0-9.]", "", strawberry$`CV (%)`))
+
+# Check if conversion was successful
+str(strawberry$Value)
+str(strawberry$`CV (%)`)
+
+# Check for any NAs introduced after conversion
+sum(is.na(strawberry$Value))
+sum(is.na(strawberry$`CV (%)`))
+
+# Summary statistics for 'Value' and 'CV (%)'
+summary(strawberry$Value)
+summary(strawberry$`CV (%)`)
+
+# Histogram for 'Value'
+ggplot(strawberry, aes(x = Value)) +
+  geom_histogram(binwidth = 10, col = "lightblue", fill = "lightblue") +
+  labs(title = "Distribution of Value", x = "Value", y = "Frequency")
+
+# Histogram for 'CV (%)'
+ggplot(strawberry, aes(x = `CV (%)`)) +
+  geom_histogram(binwidth = 1, col = "pink", fill = "pink") +
+  labs(title = "Distribution of CV (%)", x = "CV (%)", y = "Frequency")
+
+```
+
+```{R}
+# Bar plot for 'Type' column
+ggplot(strawberry, aes(x=Type)) +
+  geom_bar(fill="orange") +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+  labs(title="Distribution of Type")
+
+```
